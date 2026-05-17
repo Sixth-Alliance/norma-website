@@ -1,0 +1,205 @@
+diff --git a/src/store/authStore.ts b/src/store/authStore.ts
+index original..fixed 100644
+--- a/src/store/authStore.ts
++++ b/src/store/authStore.ts
+@@ -421,62 +421,21 @@ export const useAuthStore = create<AuthState>()(
+     }),
+     {
+       name: 'auth-storage',
+-      // Only persist user data and auth status, not email for OTP
++      // ✂️ REMOVED: Don't persist auth state to localStorage
++      // Cookies are the single source of truth for authentication
+       partialize: (state) => ({
+-        user: state.user,
+-        isAuthenticated: state.isAuthenticated,
++        // Don't persist anything auth-related
+       }),
+-      // After rehydration, verify if we still have valid auth
+       onRehydrateStorage: () => (state) => {
+-        // Validate that we have both user data AND a valid auth token
+         if (state) {
+-          const hasValidUser = state.user && state.user.id;
+-          
+-          // Check if we have a valid auth token in cookies
+-          // This prevents rehydrating stale auth state when cookies have expired
+-          let hasValidToken = false;
+-          try {
+-            // Check for auth token in cookies (httpOnly cookies should be present)
+-            if (typeof document !== 'undefined') {
+-              const cookies = document.cookie;
+-              hasValidToken = cookies.includes('userToken=') || 
+-                            cookies.includes('accessToken=') || 
+-                            cookies.includes('access_token=') ||
+-                            cookies.includes('debug_userToken=');
+-            }
+-          } catch (e) {
+-            logger.warn('Failed to check auth cookies during rehydration', e);
+-          }
+-          
+-          // **FIX: Sync localStorage state with cookie state**
+-          // If we have cookies but localStorage says not authenticated, trust the cookies
+-          if (hasValidToken && !state.isAuthenticated && !hasValidUser) {
+-            logger.info('🔄 Cookie exists but localStorage out of sync - will re-fetch profile via AuthInit');
+-            // Don't set isAuthenticated here, let AuthInit handle the profile fetch
+-            // This prevents the "logged in but shows login page" bug
+-            state.isAuthenticated = false;
+-            state.isRehydrated = false; // Let AuthInit complete the rehydration
+-          } else if (!hasValidToken && state.isAuthenticated) {
+-            // Cookies expired but localStorage still shows authenticated
+-            logger.info('🔄 Cookies expired, clearing stale localStorage auth state');
+-            state.isAuthenticated = false;
+-            state.user = {} as User;
+-            state.isRehydrated = true;
+-          } else if (hasValidToken && hasValidUser && state.isAuthenticated) {
+-            // Everything aligned - both cookies and localStorage are valid
+-            logger.debug('✅ Auth state properly synced between cookies and localStorage');
+-            state.isRehydrated = false; // Let AuthInit validate via API call
+-          } else {
+-            // No auth anywhere
+-            state.isAuthenticated = false;
+-            state.isRehydrated = true;
+-          }
++          // Reset auth state - let AuthInit fetch from cookies
++          state.isAuthenticated = false;
++          state.user = {} as User;
++          state.isRehydrated = false;
+         }
+       },
+     },
+   ),
+-)
++);
+
+diff --git a/src/components/AuthInit.tsx b/src/components/AuthInit.tsx
+index original..fixed 100644
+--- a/src/components/AuthInit.tsx
++++ b/src/components/AuthInit.tsx
+@@ -10,89 +10,50 @@ import { useCartStore } from '@/src/store/CartStore';
+ 
+ export default function AuthInit() {
+   const fetchUserProfile = useAuthStore((s: any) => s.fetchUserProfile);
+-  const storeUserData = useAuthStore((s: any) => s.storeUserData);
+-  const isAuthenticated = useAuthStore((s: any) => s.isAuthenticated);
+-  const user = useAuthStore((s: any) => s.user);
+   const [isInitialized, setIsInitialized] = useState(false);
+ 
+   useEffect(() => {
+     async function init() {
+-      // Skip if already initialized
+       if (isInitialized) return;
+ 
+-      // Clear any legacy JS-stored auth tokens on init to avoid rehydrating
+-      // an authenticated session from stale localStorage values. We only
+-      // remove known auth-related keys; other app storage (cart, outlets)
+-      // is intentionally preserved.
++      // ✅ SIMPLIFIED: Just check cookies and fetch profile
++      // No localStorage sync complexity - cookies are the single source of truth
+       try {
+-        if (typeof window !== 'undefined') {
+-          window.localStorage.removeItem('userToken');
+-          window.localStorage.removeItem('accessToken');
+-          window.localStorage.removeItem('access_token');
+-          window.localStorage.removeItem('debug_userToken');
+-        }
+-      } catch (e) {
+-        logger.warn('AuthInit: failed clearing legacy token keys from localStorage', e);
+-      }
+-
+-      try {
+-        // If we already have user data in zustand (from persistence), try to refresh it
+-        // This handles the case where user refreshes the page - we restore from zustand
+-        // and then verify with the backend
+-        if (isAuthenticated && user && user.id) {
+-          logger.debug('AuthInit: Auth state found in store, verifying with backend');
+-          try {
+-            // Verify the stored auth is still valid by fetching fresh profile
+-            const profile = await fetchUserProfile();
+-            if (profile && profile.id) {
+-              logger.info('AuthInit: Stored auth verified, profile refreshed');
+-                // Mark global rehydration complete so other components can safely
+-                // rely on auth state for redirects
+-                try { useAuthStore.getState().setRehydrated(true); } catch (e) {}
+-                setIsInitialized(true);
+-              return;
+-            }
+-          } catch (e: any) {
+-            // If we get 401, the cookies have expired but Zustand still has stale auth
+-            // We need to explicitly clear the auth state so user sees login button
+-            const errorMsg = e?.message || String(e);
+-            if (e?.response?.status === 401 || errorMsg.includes("401") || errorMsg.includes("No authentication token")) {
+-              logger.info('AuthInit: Cookies expired, clearing stale auth state');
+-              // Clear the stale auth state from Zustand
+-              const authStore = useAuthStore.getState();
+-              authStore.logout(); // This will clear both isAuthenticated and user
+-              try { useAuthStore.getState().setRehydrated(true); } catch (e) {}
+-              setIsInitialized(true);
+-              return; // Don't try to re-auth below, user needs to login again
+-            }
+-            
+-            // If verification fails for other reasons, log and continue to re-auth below
+-            logger.debug('AuthInit: Stored auth invalid, will re-authenticate');
+-          }
+-        }
+-
+-        // Try to fetch profile (relies on httpOnly cookies sent by browser)
+-        try {
+-          const profile = await fetchUserProfile();
+-          if (profile && profile.id) {
+-            logger.info('AuthInit: User authenticated via cookies');
+-            try { useAuthStore.getState().setRehydrated(true); } catch (e) {}
+-            setIsInitialized(true);
+-          } else {
+-            logger.debug('AuthInit: No authentication found (anonymous user)');
+-            try { useAuthStore.getState().setRehydrated(true); } catch (e) {}
+-            setIsInitialized(true);
+-          }
+-        } catch (e: any) {
+-          // 401 is expected for anonymous users
+-          const msg = (e && e.message) ? e.message : String(e);
+-          if (typeof msg === 'string' && (msg.includes('401') || msg.includes('authentication'))) {
+-            logger.debug('AuthInit: No active session (anonymous user)');
+-          } else {
+-            logger.warn('AuthInit: Unexpected error during profile fetch:', msg);
+-          }
++        // fetchUserProfile will use cookies automatically
++        const profile = await fetchUserProfile();
++        
++        if (profile && profile.id) {
++          logger.info('✅ AuthInit: User authenticated via cookies');
++          useAuthStore.getState().setRehydrated(true);
+           setIsInitialized(true);
++          
++          // Continue with outlet selection logic...
++          try {
++            const selectedOutlet = useOutletStore.getState().selectedOutlet;
++            if (!selectedOutlet || !selectedOutlet.id) {
++              const outlets = await getAllOutlets();
++              if (outlets && outlets.length > 0) {
++                useOutletStore.getState().selectOutlet(outlets[0]);
++                logger.info('AuthInit: Auto-selected first outlet');
++              }
++            }
++          } catch (e) {
++            logger.warn('AuthInit: Outlet selection failed', e);
++          }
++        } else {
++          // No profile means no valid cookie - user is anonymous
++          logger.debug('AuthInit: No authentication (anonymous user)');
++          useAuthStore.getState().setRehydrated(true);
++          setIsInitialized(true);
+         }
++      } catch (e: any) {
++        // 401 is expected for anonymous users
++        const status = e?.response?.status;
++        if (status === 401) {
++          logger.debug('AuthInit: No active session (anonymous user)');
++        } else {
++          logger.warn('AuthInit: Error during profile fetch:', e);
++        }
++        useAuthStore.getState().setRehydrated(true);
++        setIsInitialized(true);
++      }
+ 
+-        // --- Outlet auto-selection: if user hasn't selected an outlet yet,
++      // Outlet auto-selection for anonymous users
++      try {

@@ -1,0 +1,40 @@
+# Vercelignore - Files to exclude from deployment
+
+# Development files
+.env.local
+.env.development
+.env.example
+
+# Build cache
+.next/cache/
+
+# Testing
+coverage/
+__tests__/
+*.test.js
+*.test.ts
+*.test.tsx
+*.spec.js
+*.spec.ts
+*.spec.tsx
+
+# Documentation
+docs/
+*.md
+README.md
+
+# Development tools
+.vscode/
+.idea/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Large directories that aren't needed for deployment
+scripts/
+vitest.config.ts
+
+# Temporary files
+.DS_Store
+Thumbs.db

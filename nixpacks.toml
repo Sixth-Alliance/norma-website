@@ -1,0 +1,18 @@
+[phases.setup]
+nixPkgs = ['nodejs_22', 'pnpm']
+
+[phases.install]
+cmds = ['pnpm install --frozen-lockfile']
+
+[phases.build]
+cmds = [
+  'rm -rf .next',
+  'pnpm run build'
+]
+
+[start]
+cmd = 'pnpm start'
+
+[env]
+NODE_ENV = 'production'
+NEXT_TELEMETRY_DISABLED = '1'
