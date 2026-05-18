@@ -273,7 +273,7 @@ const DeliveryModal: React.FC<DeliveryModalProps> = (props) => {
           Enter your delivery details
         </DialogDescription>
 
-        <p className="text-3xl font-semibold mb-3">Enter your Deliverydys Address</p>
+        <p className="text-3xl font-semibold mb-3">Enter your Delivery Address</p>
 
         <DeliveryForm {...props} />
       </DialogContent>
