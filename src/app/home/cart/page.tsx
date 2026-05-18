@@ -950,6 +950,7 @@ const Page = () => {
     }
 
     if (selectedDeliveryMethod === "delivery") {
+      console.log("address ", deliveryAddress);
       const trimmedAddress = String(deliveryAddress || "").trim();
       const trimmedPhone = String(deliveryPhone || "").trim();
 
@@ -1145,6 +1146,7 @@ const Page = () => {
 
     // Validate required information
     if (selectedDeliveryMethod === "delivery") {
+      console.log("address ", deliveryAddress);
       if (!String(deliveryAddress || "").trim()) {
         showSimpleToast("Please enter a delivery address", "failed");
         return;
