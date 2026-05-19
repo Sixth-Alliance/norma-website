@@ -2,8 +2,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-export const runtime = 'edge';
-
 export function proxy(request: NextRequest) {
   // Server-side heuristic: check for session cookie to infer authenticated users.
   // We look for `sessionid` (Django-style) or `userToken` (legacy) as indicators.
