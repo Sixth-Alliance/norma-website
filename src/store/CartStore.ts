@@ -75,7 +75,7 @@ interface CartState {
   };
 
   // Cart Actions
-  addItem: (item: Omit<CartItem, "quantity">, outletId: string, productId?: string, quantity?: number) => Promise<void>;
+  addItem: (item: Omit<CartItem, "quantity">, outletId: string, productId?: string, quantity?: number, extras?: Record<string, any>) => Promise<void>;
   removeItem: (id: string) => Promise<void>;
   updateQuantity: (id: string, quantity: number) => Promise<void>;
   clearCart: (outletId?: string) => Promise<void>;
@@ -143,7 +143,7 @@ export const useCartStore = create<CartState>()(
       },
 
       // Cart Actions with API integration
-      addItem: async (newItem, outletId, productId, quantity = 1) => {
+      addItem: async (newItem, outletId, productId, quantity = 1, extras?) => {
         // Strictly backend-driven: add item via API, then sync cart from backend response
         let resolvedOutletId = outletId || get().currentOutletId;
         if (!resolvedOutletId) {
@@ -197,6 +197,7 @@ export const useCartStore = create<CartState>()(
             product_id: requestProductId,
             outlet_id: resolvedOutletId,
             quantity: quantity || 1,
+            extras: extras && Object.keys(extras).length > 0 ? extras : undefined,
             special_notes: ""
           }, resolvedOutletId);
           logger.info("📦 CartStore.addItem - addToCartAPI response", { backendCartId: backendResponse?.id, items: backendResponse?.items?.length });

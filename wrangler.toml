@@ -1,0 +1,6 @@
+name = "your-nextjs-app"
+# The folder containing your compiled static assets/worker
+pages_build_output_dir = ".next" 
+
+compatibility_date = "2026-05-19"
+compatibility_flags = [ "nodejs_compat" ]

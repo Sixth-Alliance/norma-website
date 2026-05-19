@@ -21,6 +21,30 @@ export interface Category {
   name: string;
 }
 
+export interface ExtraOption {
+  id: string;
+  name: string;
+  image: string | null;
+  price: string;
+  is_default: boolean;
+  sort_order: number;
+  status: string;
+}
+
+export interface ProductExtra {
+  id: string;
+  product: string;
+  title: string;
+  description?: string;
+  extras_format: 'radio' | 'check' | 'toggle' | 'text' | 'number';
+  is_required: boolean;
+  min_selections: number;
+  max_selections: number;
+  sort_order: number;
+  status: string;
+  options: ExtraOption[];
+}
+
 export interface User {
   id: string;
   email: string;
@@ -58,6 +82,7 @@ export interface Product {
   categories_for_outlet: Category[];
   created_at: string;
   updated_at: string;
+  extras?: ProductExtra[];
 }
 export interface CartItemRequest {
   product_id: string;
