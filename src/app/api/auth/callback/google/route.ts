@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const runtime = 'edge';
+
 export async function GET(request: NextRequest) {
   // Get base URL from environment variable (set in Railway/production) or use request origin as fallback
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || request.nextUrl.origin;

@@ -268,7 +268,7 @@ const DeliveryModal: React.FC<DeliveryModalProps> = (props) => {
   return (
     <Dialog open={props.isOpen} onOpenChange={props.setIsOpen}>
       <DialogContent className="bg-background p-8 max-w-sm [&>button]:hidden">
-        <DialogTitle className="sr-only">Delivery Address</DialogTitle>
+        <DialogTitle className="sr-only">Delivery Address </DialogTitle>
         <DialogDescription className="sr-only">
           Enter your delivery details
         </DialogDescription>

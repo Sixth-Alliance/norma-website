@@ -18,6 +18,7 @@ import {
   getSingleProduct,
   addToCart,
   getCurrentCart,
+  type ProductExtra,
 } from "@/src/app/api/action";
 import { getCartToken } from "@/src/lib/tokens";
 import { getCookie } from "@/src/lib/tokens";
@@ -56,6 +57,7 @@ interface Product {
   main_image_url: string;
   availability_status: string;
   is_active: boolean;
+  extras?: ProductExtra[];
 }
 
 interface FoodItem {
@@ -74,6 +76,7 @@ interface FoodItem {
   updated_at?: string;
   uuid?: string;
   outlet_uuid?: string;
+  extras?: ProductExtra[];
 }
 // Use centralized getCookie from src/lib/tokens
 // Helper to get session ID from cookies
@@ -102,6 +105,7 @@ const Foods = () => {
   const [isMobile, setIsMobile] = useState<boolean | null>(null);
   const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [loadingProduct, setLoadingProduct] = useState(false);
+  const [selectedExtras, setSelectedExtras] = useState<Record<string, any>>({});
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -316,7 +320,27 @@ const Foods = () => {
         description:
           detailedProduct.description ||
           `Delicious ${detailedProduct.title} from ${detailedProduct.outlet_name}`,
+        extras: detailedProduct.extras ?? product.extras ?? [],
       };
+
+      // Initialise selectedExtras with default option selections
+      const initExtras: Record<string, any> = {};
+      for (const extra of foodItem.extras ?? []) {
+        if (extra.extras_format === "radio") {
+          const def = extra.options.find((o) => o.is_default);
+          if (def) initExtras[extra.id] = def.id;
+        } else if (extra.extras_format === "check") {
+          const defs = extra.options.filter((o) => o.is_default).map((o) => o.id);
+          if (defs.length > 0) initExtras[extra.id] = defs;
+        } else if (extra.extras_format === "toggle") {
+          initExtras[extra.id] = false;
+        } else if (extra.extras_format === "text") {
+          initExtras[extra.id] = "";
+        } else if (extra.extras_format === "number") {
+          initExtras[extra.id] = 0;
+        }
+      }
+      setSelectedExtras(initExtras);
 
       setSelectedFood(foodItem);
       setIsModalOpen(true);
@@ -328,6 +352,25 @@ const Foods = () => {
       const safeOutletName = String(product.outlet_name || "Restaurant");
       const safeCategoryName = String(product.category_name || "Food");
 
+      const fallbackExtras = product.extras ?? [];
+      const initExtras: Record<string, any> = {};
+      for (const extra of fallbackExtras) {
+        if (extra.extras_format === "radio") {
+          const def = extra.options.find((o) => o.is_default);
+          if (def) initExtras[extra.id] = def.id;
+        } else if (extra.extras_format === "check") {
+          const defs = extra.options.filter((o) => o.is_default).map((o) => o.id);
+          if (defs.length > 0) initExtras[extra.id] = defs;
+        } else if (extra.extras_format === "toggle") {
+          initExtras[extra.id] = false;
+        } else if (extra.extras_format === "text") {
+          initExtras[extra.id] = "";
+        } else if (extra.extras_format === "number") {
+          initExtras[extra.id] = 0;
+        }
+      }
+      setSelectedExtras(initExtras);
+
       setSelectedFood({
         id: product.id ? hashString(String(product.id)) : String(Date.now()),
         image: product.main_image_url || Image5,
@@ -336,6 +379,7 @@ const Foods = () => {
         price: Number(product.price) || 0,
         delivery_time: "20 - 30mins",
         description: `Delicious ${safeTitle} from ${safeOutletName}`,
+        extras: fallbackExtras,
       });
       setIsModalOpen(true);
     } finally {
@@ -347,6 +391,7 @@ const Foods = () => {
     setIsModalOpen(false);
     setSelectedFood(null);
     setSelectedProduct(null);
+    setSelectedExtras({});
   };
 
   useEffect(() => {
@@ -393,6 +438,45 @@ const Foods = () => {
       return;
     }
 
+    // Validate required extras before adding to cart
+    for (const extra of selectedFood.extras ?? []) {
+      if (!extra.is_required) continue;
+      const val = selectedExtras[extra.id];
+      if (extra.extras_format === "radio" && !val) {
+        showSimpleToast(`Please select an option for "${extra.title}"`, "failed");
+        return;
+      }
+      if (extra.extras_format === "check") {
+        const minSels = extra.min_selections > 0 ? extra.min_selections : 1;
+        const sels = (val as string[]) ?? [];
+        if (sels.length < minSels) {
+          showSimpleToast(
+            `Please select at least ${minSels} option(s) for "${extra.title}"`,
+            "failed"
+          );
+          return;
+        }
+      }
+      if (extra.extras_format === "text" && (!val || !String(val).trim())) {
+        showSimpleToast(`Please fill in "${extra.title}"`, "failed");
+        return;
+      }
+    }
+
+    // Build extras payload — omit empty/unset values
+    const extrasPayload: Record<string, any> = {};
+    for (const extra of selectedFood.extras ?? []) {
+      const val = selectedExtras[extra.id];
+      if (
+        val !== undefined &&
+        val !== null &&
+        val !== "" &&
+        !(Array.isArray(val) && val.length === 0)
+      ) {
+        extrasPayload[extra.id] = val;
+      }
+    }
+
     try {
       setIsAddingToCart(true);
       logger.info("Add to cart", {
@@ -412,7 +496,8 @@ const Foods = () => {
         },
         selectedOutlet.id,
         selectedProduct.id,
-        quantity
+        quantity,
+        Object.keys(extrasPayload).length > 0 ? extrasPayload : undefined
       ); // Pass the actual product UUID and quantity
 
       logger.info("Item successfully added to cart");
@@ -848,6 +933,8 @@ const Foods = () => {
               }
               count={quantityCounts[selectedFood.id] || 1}
               isAddingToCart={isAddingToCart}
+              selectedExtras={selectedExtras}
+              onExtrasChange={setSelectedExtras}
             />
           ) : (
             <FoodModal
@@ -861,6 +948,8 @@ const Foods = () => {
               }
               count={quantityCounts[selectedFood.id] || 1}
               isAddingToCart={isAddingToCart}
+              selectedExtras={selectedExtras}
+              onExtrasChange={setSelectedExtras}
             />
           ))}
       </div>

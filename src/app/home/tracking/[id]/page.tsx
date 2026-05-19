@@ -1,5 +1,7 @@
 "use client";
 
+export const runtime = 'edge';
+
 import DesktopNavigation from "@/src/components/home-components/home-contents/DesktopNavigation";
 import Image from "next/image";
 import React, { useState, useEffect } from "react";
