@@ -4,6 +4,15 @@ import React from "react";
 import { StaticImageData } from "next/image";
 import TimerIcon from "@/src/assets/images/timer-02.svg";
 import { normalizeCloudinaryUrl } from "@/src/lib/imageUtils";
+
+interface CartItemExtraSnapshot {
+  option_name: string;
+  extra_title: string;
+  option_unit_price?: string;
+  line_total?: string;
+  quantity?: number;
+}
+
 interface singleCartProps {
   image: string | StaticImageData;
   title: string;
@@ -15,6 +24,8 @@ interface singleCartProps {
   handleDecrement: () => void;
   quantity: number;
   amount: number;
+  extras?: CartItemExtraSnapshot[] | null;
+  extras_total?: number;
 }
 const CheckOutCard: React.FC<singleCartProps> = ({
   image,
@@ -27,6 +38,8 @@ const CheckOutCard: React.FC<singleCartProps> = ({
   handleIncrement,
   quantity,
   amount,
+  extras,
+  extras_total,
 }) => {
   const newTagRegex = /\[\s*new\s*\]$/i;
   
@@ -72,6 +85,31 @@ const CheckOutCard: React.FC<singleCartProps> = ({
             <p className="text-xs  font-medium text-foreground-lighter">
               {sub_title}
             </p>
+            {extras && extras.length > 0 && (
+              <div className="mt-2 space-y-1 border-t border-border/40 pt-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-foreground-lighter">Extras</p>
+                {extras.map((e, i) => {
+                  const unitPrice = parseFloat(e.option_unit_price || "0");
+                  return (
+                    <div key={i} className="flex justify-between items-start gap-1">
+                      <p className="text-xs text-foreground-lighter">
+                        {e.extra_title}:{" "}
+                        <span className="font-medium text-foreground">{e.option_name}</span>
+                      </p>
+                      {unitPrice > 0 && (
+                        <p className="text-xs font-semibold text-orange shrink-0">+₦{unitPrice.toLocaleString()}</p>
+                      )}
+                    </div>
+                  );
+                })}
+                {extras_total != null && extras_total > 0 && (
+                  <p className="text-xs font-semibold text-foreground-lighter border-t border-border/40 pt-1 mt-1">
+                    Extras:{" "}
+                    <span className="text-foreground">+₦{Number(extras_total).toLocaleString()}</span>
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="mt-2  flex gap-2 items-center">

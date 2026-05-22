@@ -206,6 +206,48 @@ export function clearAuthCookies(): void {
   }
 }
 
+// Attempts to silently refresh the access token using the stored refresh token.
+// Returns the new access token string on success, or null if refresh is not possible.
+// On success, new tokens are persisted via setAuthCookies so subsequent getAuthToken()
+// calls immediately return the fresh token.
+export async function refreshAccessToken(): Promise<string | null> {
+  if (!safeIsBrowser()) return null;
+
+  const refreshToken =
+    (typeof window !== 'undefined' ? window.localStorage.getItem('refreshToken') : null) ||
+    getCookie('refreshToken') ||
+    getCookie('refresh_token');
+
+  if (!refreshToken) return null;
+
+  try {
+    const baseURL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://normaapieats.normaeats.com/api/v1';
+    const response = await fetch(`${baseURL}/users/token/refresh/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ refresh: refreshToken }),
+      credentials: 'include',
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    const newAccessToken = data.access || data.access_token || data.accessToken;
+    const newRefreshToken = data.refresh || data.refresh_token || null;
+
+    if (!newAccessToken) return null;
+
+    // Persist the new tokens. Keep the existing refresh token if the server did not rotate it.
+    setAuthCookies(newAccessToken, newRefreshToken || refreshToken);
+    return newAccessToken;
+  } catch {
+    return null;
+  }
+}
+
 // Set auth cookies (access + optional refresh) and update in-memory token.
 // This centralizes cookie options and avoids ad-hoc cookie writes across the app.
 export function setAuthCookies(accessToken?: string | null, refreshToken?: string | null, opts?: { accessMaxAge?: number; refreshMaxAge?: number; secure?: boolean } ) {

@@ -84,28 +84,45 @@ export interface Product {
   updated_at: string;
   extras?: ProductExtra[];
 }
+export interface CartExtrasEntry {
+  option_id: string;
+  quantity: number;
+}
+
 export interface CartItemRequest {
   product_id: string;
   outlet_id: string;
   quantity: number;
   size?: string; // OPTIONAL: Product size/variant (max 20 chars)
-  extras?: Record<string, any>; // OPTIONAL: Additional options/extras (JSON object)
+  extras?: CartExtrasEntry[]; // OPTIONAL: Selected option IDs with quantities
   special_notes?: string; // OPTIONAL: Customer instructions (max 500 chars)
 }
+export interface CartItemExtraSnapshot {
+  extra_id: string;
+  extra_title: string;
+  option_id: string;
+  option_name: string;
+  option_unit_price: string;
+  quantity: number;
+  line_total: string;
+}
+
 export interface CartItem {
   id: string;
   product_id: string;
   outlet: string;
   product_name: string;
-  product_price: number; // Fixed: number instead of string
+  product_price: number;
   product_image: string;
   quantity: number;
   size: string | null;
-  extras: Record<string, any> | null; // Fixed: better typing instead of string
+  extras: CartItemExtraSnapshot[] | null;
   special_notes: string | null;
-  unit_price: number; // Fixed: number instead of string
-  total_price: number; // Fixed: number instead of string
-  is_available: boolean; // Fixed: boolean instead of string
+  base_unit_price: number;
+  extras_total: number;
+  unit_price: number;
+  total_price: number;
+  is_available: boolean;
   created_at: string;
 }
 
@@ -639,6 +656,7 @@ export async function getCurrentCart(outletId: string): Promise<CartResponse> {
     }
 
     const responseData = await response.json();
+    console.log("adfaf-cart ", responseData);
     // logger.info("✅ Get Current Cart API Response:", responseData);
 
     // Persist cart_token if server returned one alongside cart response
@@ -692,26 +710,40 @@ export async function calculateDeliveryFee(
     // Check cache first
     const cached = deliveryFeeCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-      // logger.debug("🚚 DELIVERY FEE - Using cached result");
+      logger.debug("🚚 DELIVERY FEE - Using cached result");
       return cached.data;
     }
 
     // logger.debug("🚚 DELIVERY FEE - Calculating for cart:", request.cart_id);
     // logger.debug("🚚 DELIVERY FEE - Address:", request.delivery_address_text);
 
-    // Map frontend request shape to backend expected keys and include credentials
-    // If coordinates are present but no textual address was provided, synthesize
-    // a fallback delivery_address so backend handlers that expect a non-empty
-    // text field still receive something meaningful (e.g. 'coords:lat,lng').
-    const fallbackAddress = (typeof request.delivery_latitude === 'number' && typeof request.delivery_longitude === 'number')
-      ? `coords:${request.delivery_latitude},${request.delivery_longitude}`
+    // Resolve coordinates: prefer values on the request, fall back to localStorage
+    // (written synchronously by the delivery modal before onCheckout is called).
+    let resolvedLat: number | null = typeof request.delivery_latitude === 'number'
+      ? request.delivery_latitude
+      : null;
+    let resolvedLng: number | null = typeof request.delivery_longitude === 'number'
+      ? request.delivery_longitude
+      : null;
+
+    if ((resolvedLat === null || resolvedLng === null) && typeof window !== 'undefined') {
+      const savedLat = parseFloat(localStorage.getItem('deliveryLatitude') || '');
+      const savedLng = parseFloat(localStorage.getItem('deliveryLongitude') || '');
+      if (!isNaN(savedLat) && !isNaN(savedLng)) {
+        resolvedLat = savedLat;
+        resolvedLng = savedLng;
+      }
+    }
+
+    const fallbackAddress = (resolvedLat !== null && resolvedLng !== null)
+      ? `coords:${resolvedLat},${resolvedLng}`
       : '';
 
     const payload: any = {
       fulfillment_mode: request.fulfillment_mode,
       delivery_address: request.delivery_address_text || fallbackAddress || '',
-      latitude: typeof request.delivery_latitude === 'number' ? quantizeCoord(request.delivery_latitude) : null,
-      longitude: typeof request.delivery_longitude === 'number' ? quantizeCoord(request.delivery_longitude) : null,
+      latitude: resolvedLat !== null ? quantizeCoord(resolvedLat) : null,
+      longitude: resolvedLng !== null ? quantizeCoord(resolvedLng) : null,
       cart_id: request.cart_id,
     };
 
@@ -748,6 +780,8 @@ export async function calculateDeliveryFee(
 
     const responseData = await response.json();
     logger.info("✅ Delivery Fee API Response:", responseData);
+    console.log("✅ Delivery Fee API payload:", payload);
+    console.log("✅ Delivery Fee API Response:", responseData);
 
     let deliveryFeeData: DeliveryFeeResponse;
 
@@ -1137,6 +1171,8 @@ export interface OrderItem {
   quantity: number;
   unit_price: string;
   total_price: string;
+  size?: string;
+  extras?: Record<string, any> | Array<{ extra_title: string; option_name: string; option_unit_price?: string; line_total?: string; quantity?: number }> | null;
   special_instructions?: string;
 }
 
@@ -1164,6 +1200,8 @@ export function normalizeOrder(raw: any): Order {
       quantity: Number(item.quantity || 0),
       unit_price: String(item.unit_price || 0),
       total_price: String(item.total_price || 0),
+      size: item.size || '',
+      extras: item.extras ?? null,
       special_instructions: item.special_notes || item.special_instructions || ''
     }));
   };
@@ -1345,12 +1383,16 @@ export async function getPaymentConfig(): Promise<{ public_key: string; currency
 }
 
 // Initialize payment for an order - returns authorization_url / reference
-export async function initializePayment(orderId: string, callbackUrl: string): Promise<{ authorization_url?: string; access_code?: string; reference?: string; amount?: number; amount_kobo?: number }> {
+export async function initializePayment(orderId: string, callbackUrl: string, orderNo?: string): Promise<{ authorization_url?: string; access_code?: string; reference?: string; amount?: number; amount_kobo?: number }> {
   try {
     const token = getAuthToken();
     if (!token) throw new Error('Authentication required to initialize payment');
 
-    const bodyPayload: any = { order_id: orderId, callback_url: callbackUrl };
+    const bodyPayload: any = {
+      order_id: orderId,
+      callback_url: callbackUrl,
+      ...(orderNo && { metadata: { order_no: orderNo } }),
+    };
 
     const response = await fetch(`${BASE_URL}/orders/payment/initialize/`, {
       method: 'POST',

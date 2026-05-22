@@ -1,14 +1,13 @@
 "use client";
 
 import type React from "react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import GooglePlacesAutocomplete, {
-  getLatLng,
-  geocodeByPlaceId,
-} from "react-google-places-autocomplete";
+import { Libraries, useJsApiLoader } from "@react-google-maps/api";
+import usePlacesAutocomplete, { getGeocode, getLatLng } from "use-places-autocomplete";
+import { X } from "lucide-react";
 
 import {
   Dialog,
@@ -24,6 +23,9 @@ import {
   FieldLabel,
 } from "@/src/ui/field";
 import CustomButton from "../CustomButton";
+
+// Stable reference — must not be recreated on each render to avoid API reload warnings
+const libraries: Libraries = ["places"];
 
 // ----------------------------
 // Zod Schema
@@ -61,12 +63,9 @@ const DeliveryForm = ({
   isResolvingAddress,
 }: Omit<DeliveryModalProps, "isOpen" | "setIsOpen">) => {
   const [isAutoPinning, setIsAutoPinning] = useState(false);
-  const [selectedAddressOption, setSelectedAddressOption] = useState<any>(
-    deliveryAddress
-      ? { label: deliveryAddress, value: { description: deliveryAddress } }
-      : null
-  );
-  const [isAddressGeocoded, setIsAddressGeocoded] = useState(false);
+  // Cache coordinates resolved from the last selected suggestion so onSubmit
+  // can use them directly without re-geocoding.
+  const coordsRef = useRef<{ lat: number; lng: number; address: string } | null>(null);
 
   const form = useForm<DeliveryFormValues>({
     resolver: zodResolver(deliverySchema),
@@ -76,27 +75,27 @@ const DeliveryForm = ({
     },
   });
 
-  useEffect(() => {
-    form.reset({
-      address: deliveryAddress,
-      phone: deliveryPhone,
-    });
-    setSelectedAddressOption(
-      deliveryAddress
-        ? { label: deliveryAddress, value: { description: deliveryAddress } }
-        : null
-    );
-  }, [deliveryAddress, deliveryPhone, form]);
+  const {
+    ready,
+    value,
+    suggestions: { status, data },
+    setValue,
+    clearSuggestions,
+  } = usePlacesAutocomplete({
+    requestOptions: { componentRestrictions: { country: "ng" } },
+    debounce: 300,
+    defaultValue: deliveryAddress,
+  });
 
-  // Persist coordinates and notify listeners used by checkout/cart flows.
-  const saveAndDispatchCoordinates = (
-    lat: number,
-    lng: number,
-    address: string
-  ) => {
+  useEffect(() => {
+    form.reset({ address: deliveryAddress, phone: deliveryPhone });
+    setValue(deliveryAddress, false);
+  }, [deliveryAddress, deliveryPhone, form, setValue]);
+
+  // Write coordinates to localStorage and notify the cart page.
+  const saveAndDispatchCoordinates = (lat: number, lng: number, address: string) => {
     localStorage.setItem("deliveryLatitude", lat.toString());
     localStorage.setItem("deliveryLongitude", lng.toString());
-
     window.dispatchEvent(
       new CustomEvent("coordinatesUpdated", {
         detail: { latitude: lat, longitude: lng, formattedAddress: address },
@@ -104,66 +103,63 @@ const DeliveryForm = ({
     );
   };
 
-  // Resolve coordinates from a place id chosen in the autocomplete list.
-  const processCoordinatesByPlaceId = async (
-    placeId: string,
-    fallbackAddress: string
-  ) => {
+  // Geocode an address string → returns { lat, lng } or null on failure.
+  const geocodeAddress = async (address: string): Promise<{ lat: number; lng: number; formatted: string } | null> => {
     try {
-      const results = await geocodeByPlaceId(placeId);
+      const results = await getGeocode({ address });
       const { lat, lng } = await getLatLng(results[0]);
-      const formattedAddress = results[0]?.formatted_address || fallbackAddress;
-      console.log("dfaf ", formattedAddress);
-      console.log("eatt ", results);
-      saveAndDispatchCoordinates(lat, lng, formattedAddress);
-      setIsAddressGeocoded(true);
-      return true;
-    } catch (error) {
-      console.error("Error fetching geocode by place id:", error);
-      setIsAddressGeocoded(false);
-      return false;
+      return { lat, lng, formatted: results[0].formatted_address || address };
+    } catch {
+      return null;
+    }
+  };
+
+  // Called when the user clicks a suggestion — geocodes immediately and caches
+  // the result so onSubmit can skip the geocode call entirely.
+  const handleSelect = async (suggestion: google.maps.places.AutocompletePrediction) => {
+    setValue(suggestion.description, false);
+    clearSuggestions();
+    form.setValue("address", suggestion.description, { shouldValidate: true });
+    const coords = await geocodeAddress(suggestion.description);
+    if (coords) {
+      coordsRef.current = { lat: coords.lat, lng: coords.lng, address: suggestion.description };
+      // Dispatch early so the cart page can start the auto-fee calculation.
+      saveAndDispatchCoordinates(coords.lat, coords.lng, coords.formatted);
     }
   };
 
   const onSubmit = async (data: DeliveryFormValues) => {
-    setIsAutoPinning(true);
-    console.log("oaafj");
+    let coords: { lat: number; lng: number; formatted: string } | null = null;
 
-    // If address was already geocoded during selection, proceed directly.
-    // Otherwise, if user manually typed an address, attempt to geocode.
-    if (isAddressGeocoded) {
+    // If the user selected a suggestion, reuse the cached coords — no extra geocode needed.
+    if (coordsRef.current && coordsRef.current.address === data.address) {
+      coords = { lat: coordsRef.current.lat, lng: coordsRef.current.lng, formatted: data.address };
+    } else {
+      // User typed manually without picking a suggestion — geocode now.
+      setIsAutoPinning(true);
+      coords = await geocodeAddress(data.address);
       setIsAutoPinning(false);
-      setDeliveryAddress(data.address);
-      setDeliveryPhone(data.phone);
-      onCheckout();
+    }
+
+    if (!coords) {
+      form.setError("address", {
+        type: "manual",
+        message: "We couldn't locate this address. Please select a suggestion from the list.",
+      });
       return;
     }
 
-    // Last attempt: geocode by selected place ID if available.
-    console.log("ifaf ", selectedAddressOption);
-    const placeId = selectedAddressOption?.value?.place_id;
-    const isValidAddress = placeId
-      ? await processCoordinatesByPlaceId(placeId, data.address)
-      : false;
-
-    setIsAutoPinning(false);
-
-    if (isValidAddress) {
-      setDeliveryAddress(data.address);
-      setDeliveryPhone(data.phone);
-      onCheckout();
-    } else {
-      form.setError("address", {
-        type: "manual",
-        message:
-          "Please select an address suggestion from the list so we can pin your location.",
-      });
-    }
+    // Ensure localStorage and cart state are up to date before proceeding.
+    saveAndDispatchCoordinates(coords.lat, coords.lng, coords.formatted);
+    setDeliveryAddress(data.address);
+    setDeliveryPhone(data.phone);
+    onCheckout();
   };
 
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} className="">
       <FieldGroup>
+        {/* Address */}
         <Controller
           name="address"
           control={form.control}
@@ -171,51 +167,67 @@ const DeliveryForm = ({
             <Field data-invalid={fieldState.invalid} className="">
               <FieldLabel htmlFor="address">Delivery Address</FieldLabel>
               <div className="relative">
-                <GooglePlacesAutocomplete
-                  apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ""}
-                  autocompletionRequest={{
-                    componentRestrictions: {
-                      country: ["ng"],
-                    },
+                <Input
+                  id="address"
+                  placeholder="Enter your address (e.g., Gwarinpa, Abuja)"
+                  autoComplete="off"
+                  disabled={!ready || isAutoPinning}
+                  value={value}
+                  onChange={(e) => {
+                    setValue(e.target.value);
+                    field.onChange(e.target.value);
                   }}
-                  selectProps={{
-                    value: selectedAddressOption,
-                    isDisabled: isAutoPinning,
-                    isClearable: true,
-                    placeholder: "Enter your address (e.g., Gwarinpa, Abuja)",
-                    onBlur: field.onBlur,
-                    onChange: async (option: any) => {
-                      setSelectedAddressOption(option);
-                      const address = option?.label || "";
-                      field.onChange(address);
-                      form.setValue("address", address, { shouldValidate: true });
-
-                      if (option?.value?.placeId) {
-                        await processCoordinatesByPlaceId(
-                          option.value.placeId,
-                          address
-                        );
-                      }
-                    },
-                    styles: {
-                      control: (base: any) => ({
-                        ...base,
-                        minHeight: 48,
-                        borderColor: fieldState.invalid ? "#ef4444" : base.borderColor,
-                      }),
-                      menu: (base: any) => ({
-                        ...base,
-                        zIndex: 60,
-                      }),
-                    },
-                  }}
+                  onBlur={() => field.onBlur()}
+                  className="py-5 text-base pr-10"
                 />
+
+                {/* Clear button */}
+                {value && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setValue("");
+                      form.setValue("address", "");
+                      setDeliveryAddress("");
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded-full transition-colors"
+                  >
+                    <X className="w-4 h-4 text-gray-400" />
+                  </button>
+                )}
+
+                {/* Suggestions dropdown */}
+                {status === "OK" && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                    <ul className="py-1">
+                      {data.map((suggestion) => {
+                        const {
+                          place_id,
+                          structured_formatting: { main_text, secondary_text },
+                        } = suggestion;
+                        return (
+                          <li key={place_id}>
+                            <button
+                              type="button"
+                              onClick={() => handleSelect(suggestion)}
+                              className="w-full text-left px-4 py-3 hover:bg-gray-50 focus:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                            >
+                              <div className="font-medium text-gray-900 text-sm">{main_text}</div>
+                              <div className="text-xs text-gray-500 truncate">{secondary_text}</div>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
               </div>
               {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
             </Field>
           )}
         />
 
+        {/* Phone */}
         <Controller
           name="phone"
           control={form.control}
@@ -230,9 +242,7 @@ const DeliveryForm = ({
                 className="py-5 text-base"
                 disabled={isAutoPinning}
                 onChange={(e) => {
-                  const rawValue = e.target.value;
-                  const filteredValue = rawValue.replace(/[^0-9+]/g, "");
-                  field.onChange(filteredValue);
+                  field.onChange(e.target.value.replace(/[^0-9+]/g, ""));
                 }}
                 onBlur={() => {
                   field.onBlur();
@@ -255,7 +265,7 @@ const DeliveryForm = ({
       </div>
 
       <p className="text-xs text-gray-500 mt-2">
-        If your address is not listed, keep typing until a matching suggestion appears, then select it.
+        Start typing and select a suggestion to confirm your location.
       </p>
     </form>
   );
@@ -265,17 +275,27 @@ const DeliveryForm = ({
 // Main Component
 // ----------------------------
 const DeliveryModal: React.FC<DeliveryModalProps> = (props) => {
+  const { isLoaded } = useJsApiLoader({
+    id: "google-map-script",
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
+    libraries,
+  });
+
   return (
     <Dialog open={props.isOpen} onOpenChange={props.setIsOpen}>
       <DialogContent className="bg-background p-8 max-w-sm [&>button]:hidden">
-        <DialogTitle className="sr-only">Delivery Address </DialogTitle>
+        <DialogTitle className="sr-only">Delivery Address</DialogTitle>
         <DialogDescription className="sr-only">
           Enter your delivery details
         </DialogDescription>
 
         <p className="text-3xl font-semibold mb-3">Enter your Delivery Address</p>
 
-        <DeliveryForm {...props} />
+        {isLoaded ? (
+          <DeliveryForm {...props} />
+        ) : (
+          <p className="text-sm text-gray-400 py-4">Loading address search…</p>
+        )}
       </DialogContent>
     </Dialog>
   );

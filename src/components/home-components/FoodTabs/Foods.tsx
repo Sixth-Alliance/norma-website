@@ -127,6 +127,7 @@ const Foods = () => {
 
           // Fetch current cart with the new session
           const currentCart = await getCurrentCart(selectedOutlet.id);
+          console.log("daofaf current cart ", currentCart);
           syncCartFromBackend(currentCart);
         } catch (error) {
           logger.error("Failed to initialize session for outlet", error);
@@ -463,19 +464,53 @@ const Foods = () => {
       }
     }
 
-    // Build extras payload — omit empty/unset values
-    const extrasPayload: Record<string, any> = {};
+    // Build extras payload in the API format: [{ option_id, quantity }]
+    const extrasPayload: Array<{ option_id: string; quantity: number }> = [];
+    const textNotes: string[] = [];
+
     for (const extra of selectedFood.extras ?? []) {
       const val = selectedExtras[extra.id];
-      if (
-        val !== undefined &&
-        val !== null &&
-        val !== "" &&
-        !(Array.isArray(val) && val.length === 0)
-      ) {
-        extrasPayload[extra.id] = val;
+      if (val === undefined || val === null) continue;
+
+      switch (extra.extras_format) {
+        case "radio": {
+          if (val && typeof val === "string") {
+            extrasPayload.push({ option_id: val, quantity: 1 });
+          }
+          break;
+        }
+        case "check": {
+          if (Array.isArray(val)) {
+            for (const optId of val) {
+              extrasPayload.push({ option_id: optId, quantity: 1 });
+            }
+          }
+          break;
+        }
+        case "toggle": {
+          if (val === true) {
+            const opt = extra.options.find((o) => o.status === "active");
+            if (opt) extrasPayload.push({ option_id: opt.id, quantity: 1 });
+          }
+          break;
+        }
+        case "number": {
+          if (typeof val === "number" && val > 0) {
+            const opt = extra.options.find((o) => o.status === "active");
+            if (opt) extrasPayload.push({ option_id: opt.id, quantity: val });
+          }
+          break;
+        }
+        case "text": {
+          if (val && String(val).trim()) {
+            textNotes.push(`${extra.title}: ${String(val).trim()}`);
+          }
+          break;
+        }
       }
     }
+
+    const specialNotes = textNotes.join("; ");
 
     try {
       setIsAddingToCart(true);
@@ -488,17 +523,22 @@ const Foods = () => {
       // Use the new async addItem that handles both local state and backend
       await addItem(
         {
-          id: selectedProduct.id, // Use the UUID directly
+          id: selectedProduct.id,
           title: selectedFood.title,
           sub_title: selectedFood.sub_title,
-          price: selectedFood.price, // Already a number
+          price: selectedFood.price,
+          unit_price: selectedFood.price,
+          base_unit_price: selectedFood.price,
+          extras_total: 0,
+          extras: null,
+          special_notes: specialNotes || null,
           image: selectedFood.image,
         },
         selectedOutlet.id,
         selectedProduct.id,
         quantity,
-        Object.keys(extrasPayload).length > 0 ? extrasPayload : undefined
-      ); // Pass the actual product UUID and quantity
+        extrasPayload.length > 0 ? extrasPayload : undefined
+      );
 
       logger.info("Item successfully added to cart");
       // Toast is shown by addItem in CartStore - don't show duplicate

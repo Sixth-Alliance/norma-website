@@ -47,6 +47,7 @@ export async function openPaystackPopup(options: {
   amount: number; // in kobo
   ref?: string;
   currency?: string;
+  orderNo?: string;
   onClose?: () => void;
 }): Promise<PaystackResult> {
   await loadPaystackScript();
@@ -59,6 +60,7 @@ export async function openPaystackPopup(options: {
       amount: options.amount,
       currency: options.currency || 'NGN',
       ref: options.ref || `REF-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      ...(options.orderNo && { metadata: { order_no: options.orderNo } }),
       callback: (response: any) => {
         resolve({ reference: response.reference });
       },
@@ -79,6 +81,7 @@ export async function openPaystackPopup(options: {
 
 export async function startPaymentFlow(params: {
   orderId?: string; // optional, if present prefer server-side init
+  orderNo?: string; // order_number from checkout response, used in Paystack metadata
   amountNGN: number; // amount in NGN (not kobo)
   email: string;
   callbackUrl?: string;
@@ -90,7 +93,7 @@ export async function startPaymentFlow(params: {
     if (!params.orderId) {
       throw new Error('Redirect-only flow requires orderId');
     }
-    const init = await initializePayment(params.orderId, params.callbackUrl || window.location.href);
+    const init = await initializePayment(params.orderId, params.callbackUrl || window.location.href, params.orderNo);
     if (!init) throw new Error('Payment initialization failed');
     // Prefer explicit authorization_url
     if (init.authorization_url) {

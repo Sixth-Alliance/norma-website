@@ -15,6 +15,8 @@ interface CartItem {
 	quantity: number;
 	totalAmount: number;
 	backendCartItemId?: string;
+	extras_total?: number;
+	extras?: Array<{ option_name: string; extra_title: string; option_unit_price?: string; line_total?: string; quantity?: number }> | null;
 }
 
 interface checkModalProps {
@@ -82,6 +84,8 @@ const CheckOutDesktop: React.FC<checkModalProps> = ({
 									handleDecrement={() => handleDecrement(item.id)}
 									handleIncrement={() => handleIncrement(item.id)}
 									quantity={item.quantity}
+								extras={item.extras}
+								extras_total={item.extras_total}
 								/>
 							))}
 						</div>
