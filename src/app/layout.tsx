@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { instrumentSans } from "../ui/fonts";
 import "./globals.css";
 import { ToastContainer } from "react-toastify";
-import PWAProvider from "../components/PWA/PWAProvider";
+// import PWAProvider from "../components/PWA/PWAProvider";
 import AuthInit from "../components/AuthInit";
 import NotificationProvider from "../components/providers/NotificationProvider";
 
@@ -154,13 +154,14 @@ export default function RootLayout({
           }}
           suppressHydrationWarning
         />
-        <PWAProvider>
-          <AuthInit />
+        {/* <PWAProvider>
+          
+        </PWAProvider> */}
+        <AuthInit />
           <NotificationProvider>
             {children}
           </NotificationProvider>
           <ToastContainer />
-        </PWAProvider>
       </body>
     </html>
   );

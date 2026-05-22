@@ -10,7 +10,7 @@ import {
   extractAndThrowLoginError,
   extractAndThrowVerifyOTPError,
 } from "@/src/utils/throwErrorFunctions";
-import { setAuthCookies, clearAuthCookies } from '@/src/lib/tokens';
+import { setAuthCookies, clearAuthCookies, refreshAccessToken } from '@/src/lib/tokens';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://norma-api.up.railway.app/api/v1';
 
@@ -260,10 +260,32 @@ export const useAuthStore = create<AuthState>()(
             }
           }
           
-          // If we get 401 or auth error, clear stale auth state
-          // This handles the case where Zustand persisted auth but cookies expired
+          // If we get 401 or auth error, try to silently refresh the access token before giving up
           if (error.message && (error.message.includes("401") || error.message.includes("authentication") || error.message.includes("No authentication token"))) {
-            logger.info("Clearing stale authentication state (cookies expired)");
+            // Attempt silent token refresh using the stored refresh token (valid 30 days)
+            try {
+              const newToken = await refreshAccessToken();
+              if (newToken) {
+                // Refresh succeeded — retry the profile fetch with the new token
+                try {
+                  const profileData = await getUserProfile();
+                  set(() => ({
+                    user: profileData,
+                    isAuthenticated: true,
+                    isRehydrated: true,
+                  }));
+                  logger.info("✅ Token refreshed successfully, user session restored");
+                  return profileData;
+                } catch {
+                  // Profile fetch failed even after a successful refresh — fall through to clear auth
+                }
+              }
+            } catch {
+              // Refresh request itself failed — fall through to clear auth
+            }
+
+            // Token refresh failed or profile still unavailable — clear stale auth state
+            logger.info("Clearing stale authentication state (token expired or refresh failed)");
             set(() => ({
               user: {} as User,
               isAuthenticated: false,

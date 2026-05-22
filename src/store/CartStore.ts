@@ -33,15 +33,17 @@ interface BackendCartItem {
   id: string;
   product_id: string;
   product_name: string;
-  product_price: number; // Fixed: number instead of string
+  product_price: number;
   product_image: string;
   quantity: number;
   size: string | null;
-  extras: Record<string, any> | null; // Fixed: better typing instead of string
+  extras: Array<{ extra_id: string; extra_title: string; option_id: string; option_name: string; option_unit_price: string; quantity: number; line_total: string }> | null;
   special_notes: string | null;
-  unit_price: number; // Fixed: number instead of string
-  total_price: number; // Fixed: number instead of string
-  is_available: boolean; // Fixed: boolean instead of string
+  base_unit_price: number;
+  extras_total: number;
+  unit_price: number;
+  total_price: number;
+  is_available: boolean;
   created_at: string;
 }
 
@@ -75,7 +77,7 @@ interface CartState {
   };
 
   // Cart Actions
-  addItem: (item: Omit<CartItem, "quantity">, outletId: string, productId?: string, quantity?: number, extras?: Record<string, any>) => Promise<void>;
+  addItem: (item: Omit<CartItem, "quantity">, outletId: string, productId?: string, quantity?: number, extras?: Array<{ option_id: string; quantity: number }>) => Promise<void>;
   removeItem: (id: string) => Promise<void>;
   updateQuantity: (id: string, quantity: number) => Promise<void>;
   clearCart: (outletId?: string) => Promise<void>;
@@ -197,8 +199,8 @@ export const useCartStore = create<CartState>()(
             product_id: requestProductId,
             outlet_id: resolvedOutletId,
             quantity: quantity || 1,
-            extras: extras && Object.keys(extras).length > 0 ? extras : undefined,
-            special_notes: ""
+            extras: extras && extras.length > 0 ? extras : undefined,
+            special_notes: newItem.special_notes || undefined
           }, resolvedOutletId);
           logger.info("📦 CartStore.addItem - addToCartAPI response", { backendCartId: backendResponse?.id, items: backendResponse?.items?.length });
         } catch (err) {
@@ -213,8 +215,12 @@ export const useCartStore = create<CartState>()(
               id: item.product_id,
               title: item.product_name,
               sub_title: "Product",
-              // Defensive: coerce backend values to numbers to avoid NaN in UI
-              price: Number(item.product_price) || 0,
+              base_unit_price: Number(item.base_unit_price ?? item.product_price) || 0,
+              extras_total: Number(item.extras_total) || 0,
+              unit_price: Number(item.unit_price ?? item.product_price) || 0,
+              price: Number(item.base_unit_price ?? item.product_price) || 0,
+              extras: item.extras ?? null,
+              special_notes: item.special_notes ?? null,
               image: item.product_image || Image5,
               quantity: Number(item.quantity) || 1,
               backendCartItemId: item.id,
@@ -532,11 +538,16 @@ export const useCartStore = create<CartState>()(
                 if (backendItem) {
                   // Update this item with backend data
                   return {
-                    id: item.id, // Keep original product ID
+                    id: item.id,
                     title: backendItem.product_name,
                     sub_title: 'Product',
-                    price: parseFloat(backendItem.product_price),
-                    image: backendItem.product_image || item.image, // Fallback to existing image
+                    base_unit_price: Number(backendItem.base_unit_price ?? backendItem.product_price) || 0,
+                    extras_total: Number(backendItem.extras_total) || 0,
+                    unit_price: Number(backendItem.unit_price ?? backendItem.product_price) || 0,
+                    price: Number(backendItem.base_unit_price ?? backendItem.product_price) || 0,
+                    extras: backendItem.extras ?? item.extras ?? null,
+                    special_notes: backendItem.special_notes ?? item.special_notes ?? null,
+                    image: backendItem.product_image || item.image,
                     quantity: backendItem.quantity,
                     backendCartItemId: backendItem.id,
                   };
@@ -584,7 +595,12 @@ export const useCartStore = create<CartState>()(
                             id: item.id,
                             title: backendItem.product_name,
                             sub_title: 'Product',
-                            price: parseFloat(backendItem.product_price),
+                            base_unit_price: Number(backendItem.base_unit_price ?? backendItem.product_price) || 0,
+                            extras_total: Number(backendItem.extras_total) || 0,
+                            unit_price: Number(backendItem.unit_price ?? backendItem.product_price) || 0,
+                            price: Number(backendItem.base_unit_price ?? backendItem.product_price) || 0,
+                            extras: backendItem.extras ?? item.extras ?? null,
+                            special_notes: backendItem.special_notes ?? item.special_notes ?? null,
                             image: backendItem.product_image || item.image,
                             quantity: backendItem.quantity,
                             backendCartItemId: backendItem.id,
@@ -643,7 +659,12 @@ export const useCartStore = create<CartState>()(
                       id: item.id,
                       title: backendItem.product_name,
                       sub_title: 'Product',
-                      price: parseFloat(backendItem.product_price),
+                      base_unit_price: Number(backendItem.base_unit_price ?? backendItem.product_price) || 0,
+                      extras_total: Number(backendItem.extras_total) || 0,
+                      unit_price: Number(backendItem.unit_price ?? backendItem.product_price) || 0,
+                      price: Number(backendItem.base_unit_price ?? backendItem.product_price) || 0,
+                      extras: backendItem.extras ?? item.extras ?? null,
+                      special_notes: backendItem.special_notes ?? item.special_notes ?? null,
                       image: backendItem.product_image || item.image,
                       quantity: backendItem.quantity,
                       backendCartItemId: backendItem.id,
@@ -794,13 +815,18 @@ export const useCartStore = create<CartState>()(
 
           if (backendCart.items && backendCart.items.length > 0) {
             const transformedItems = backendCart.items.map((item) => ({
-              id: item.product_id, // Use the UUID string directly, not parseInt
+              id: item.product_id,
               title: item.product_name,
               sub_title: "Product",
-              price: item.product_price, // No need to parseFloat since it's already a number
+              base_unit_price: Number(item.base_unit_price ?? item.product_price) || 0,
+              extras_total: Number(item.extras_total) || 0,
+              unit_price: Number(item.unit_price ?? item.product_price) || 0,
+              price: Number(item.base_unit_price ?? item.product_price) || 0,
+              extras: item.extras ?? null,
+              special_notes: item.special_notes ?? null,
               image: item.product_image || Image5,
               quantity: item.quantity,
-              backendCartItemId: item.id, // Store the backend cart item ID
+              backendCartItemId: item.id,
             }));
 
             return {
@@ -1114,7 +1140,7 @@ export const useCartStore = create<CartState>()(
       getSubtotal: () => {
         const state = get();
         return state.items.reduce(
-          (total, item) => total + item.price * item.quantity,
+          (total, item) => total + (item.unit_price || item.price) * item.quantity,
           0
         );
       },

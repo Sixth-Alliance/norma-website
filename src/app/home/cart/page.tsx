@@ -215,9 +215,9 @@ const Page = () => {
 
   const attemptGeocodeForTypedAddress = async (
     addressText: string,
-  ): Promise<boolean> => {
+  ): Promise<{ lat: number; lng: number; formattedAddress?: string } | null> => {
     const trimmed = String(addressText || "").trim();
-    if (!trimmed) return false;
+    if (!trimmed) return null;
     try {
       const browserResult = await geocodeViaBrowser(trimmed);
       if (browserResult) {
@@ -226,7 +226,7 @@ const Page = () => {
           browserResult.lng,
           browserResult.formattedAddress,
         );
-        return true;
+        return browserResult;
       }
       const httpResult = await geocodeViaHttp(trimmed);
       if (httpResult) {
@@ -235,12 +235,12 @@ const Page = () => {
           httpResult.lng,
           httpResult.formattedAddress,
         );
-        return true;
+        return httpResult;
       }
     } catch (error) {
       logger.error("Manual address geocode failed", error);
     }
-    return false;
+    return null;
   };
 
   const [loading, setLoading] = useState(true);
@@ -909,7 +909,7 @@ const Page = () => {
   };
 
   const calculateTotalAmount = (item: CartItem) => {
-    const priceNum = Number(String(item.price).replace(/,/g, ""));
+    const priceNum = Number(String((item.unit_price || item.price)).replace(/,/g, ""));
     if (!isFinite(priceNum)) return 0;
     return item.quantity * priceNum;
   };
@@ -965,11 +965,32 @@ const Page = () => {
       }
 
       // Attempt to resolve manual addresses into coordinates if user typed but didn't pick a suggestion
-      if (!deliveryLatitude || !deliveryLongitude) {
+      // resolvedLat/resolvedLng hold the coordinates to use. Priority:
+      //   1. React state (set via coordinatesUpdated event listener)
+      //   2. localStorage — written synchronously by DeliveryModal before calling onCheckout
+      //      (avoids the async re-render gap where state is still undefined)
+      //   3. Fresh geocode as last resort (user typed without picking a suggestion)
+      let resolvedLat: number | undefined = deliveryLatitude;
+      let resolvedLng: number | undefined = deliveryLongitude;
+
+      if (!resolvedLat || !resolvedLng) {
+        const savedLat = localStorage.getItem("deliveryLatitude");
+        const savedLng = localStorage.getItem("deliveryLongitude");
+        if (savedLat && savedLng) {
+          const parsedLat = parseFloat(savedLat);
+          const parsedLng = parseFloat(savedLng);
+          if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+            resolvedLat = parsedLat;
+            resolvedLng = parsedLng;
+          }
+        }
+      }
+
+      if (!resolvedLat || !resolvedLng) {
         setResolvingManualAddress(true);
         try {
-          const resolved = await attemptGeocodeForTypedAddress(trimmedAddress);
-          if (!resolved) {
+          const resolvedCoords = await attemptGeocodeForTypedAddress(trimmedAddress);
+          if (!resolvedCoords) {
             showSimpleToast(
               "We couldn't locate that address. Please refine it or drop a pin on the map.",
               "failed",
@@ -979,6 +1000,8 @@ const Page = () => {
             });
             return;
           }
+          resolvedLat = resolvedCoords.lat;
+          resolvedLng = resolvedCoords.lng;
         } finally {
           setResolvingManualAddress(false);
         }
@@ -992,10 +1015,10 @@ const Page = () => {
             cart_id: backendCartId,
             delivery_address_text: deliveryAddress,
             fulfillment_mode: selectedDeliveryMethod || "delivery",
-            ...(deliveryLatitude &&
-              deliveryLongitude && {
-                delivery_latitude: roundCoordinate(deliveryLatitude),
-                delivery_longitude: roundCoordinate(deliveryLongitude),
+            ...(resolvedLat &&
+              resolvedLng && {
+                delivery_latitude: roundCoordinate(resolvedLat),
+                delivery_longitude: roundCoordinate(resolvedLng),
               }),
           };
 
@@ -1063,10 +1086,10 @@ const Page = () => {
 
   const enhancedCartItems = items.map((item) => ({
     ...item,
-    delivery_time: "20 - 30mins", // You can make this dynamic if needed
+    delivery_time: "20 - 30mins",
     totalAmount: calculateTotalAmount(item),
-    basePrice: item.price, // For compatibility with existing components
-    formattedPrice: (Number(item.price) || 0).toLocaleString(), // Formatted price for display
+    basePrice: item.unit_price || item.price,
+    formattedPrice: (Number(item.unit_price || item.price) || 0).toLocaleString(),
   }));
 
   const handlePaymentSuccess = async (reference: string, orderId?: string) => {
@@ -1320,6 +1343,7 @@ const Page = () => {
               try {
                 const result = await startPaymentFlow({
                   orderId: checkoutResponse?.order_id,
+                  orderNo: checkoutResponse?.order_id,
                   amountNGN: paymentAmount,
                   email: finalEmail,
                   callbackUrl: trackingCallback,
@@ -1374,6 +1398,7 @@ const Page = () => {
                 key: paystackPublicKey,
                 email: finalEmail,
                 amount: Math.round(paymentAmount * 100),
+                orderNo: checkoutResponse?.order_id,
               });
               await handlePaymentSuccess(popupRes.reference);
               return;
@@ -1501,6 +1526,7 @@ const Page = () => {
         setIsProcessingPayment(true);
         const result = await startPaymentFlow({
           orderId: checkoutResponse?.order_id,
+          orderNo: checkoutResponse?.order_id,
           amountNGN: paymentAmount,
           email: finalEmail,
           callbackUrl: `${window.location.origin}/home/orders`,
@@ -1555,6 +1581,7 @@ const Page = () => {
             key: paystackPublicKey,
             email: finalEmail,
             amount: Math.round(paymentAmount * 100),
+            orderNo: checkoutResponse?.order_id,
           });
           await handlePaymentSuccess(popupRes.reference);
           return;
@@ -1664,12 +1691,14 @@ const Page = () => {
                   image={item.image}
                   title={item.title}
                   sub_title={item.sub_title}
-                  price={(Number(item.price) || 0).toLocaleString()}
+                  price={(Number(item.unit_price || item.price) || 0).toLocaleString()}
                   amount={totalAmount}
-                  delivery_time="20 - 30mins" // You can make this dynamic
+                  delivery_time="20 - 30mins"
                   handleDecrement={() => handleDecrement(item.id)}
                   handleIncrement={() => handleIncrement(item.id)}
                   quantity={item.quantity}
+                  extras={item.extras}
+                  extras_total={item.extras_total}
                 />
               );
             })}

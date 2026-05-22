@@ -158,12 +158,25 @@ self.addEventListener("fetch", (event) => {
   // ----------------------------------------------------------------
   // 3. Static Assets (Cache-First -> Network Fallback)
   // ----------------------------------------------------------------
-  // Scripts, Styles, and Images should prioritize cache for speed
+  // Scripts, Styles, and Images should prioritize cache for speed.
+  // In development (localhost) we always go to the network so rebuilt
+  // JS/CSS bundles are never served from a stale cache.
   if (
     request.destination === "script" ||
     request.destination === "style" ||
     request.destination === "image"
   ) {
+    const isDev =
+      self.location.hostname === "localhost" ||
+      self.location.hostname === "127.0.0.1";
+
+    if (isDev) {
+      event.respondWith(
+        fetch(request).catch(() => caches.match(request))
+      );
+      return;
+    }
+
     event.respondWith(
       caches.match(request).then((response) => {
         if (response) {

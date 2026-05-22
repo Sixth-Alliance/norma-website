@@ -4,7 +4,7 @@ export const runtime = 'edge';
 
 import { useEffect, useState } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
-import { getOrderDetails, Order, normalizeOrder } from "@/src/app/api/action";
+import { getOrderDetails, Order, OrderItem, normalizeOrder } from "@/src/app/api/action";
 import { checkoutService } from '@/src/api/services';
 import { useAuthStore } from "@/src/store/authStore";
 import DesktopNavigation from "@/src/components/home-components/home-contents/DesktopNavigation";
@@ -137,6 +137,54 @@ const OrderDetailPage = () => {
 
   const handleTrackOrder = () => {
     router.push(`/home/tracking/${orderId}`);
+  };
+
+  // Render extras for an order item — handles both raw UUID dict and snapshot array formats
+  const renderExtras = (extras: OrderItem["extras"]) => {
+    if (!extras) return null;
+
+    // Snapshot array format (e.g. from cart-based orders)
+    if (Array.isArray(extras)) {
+      if (extras.length === 0) return null;
+      return (
+        <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Extras</p>
+          {extras.map((e: any, i: number) => {
+            const price = parseFloat(e.option_unit_price || "0");
+            return (
+              <div key={i} className="flex justify-between items-center">
+                <span className="text-xs text-gray-600">
+                  {e.extra_title}: <span className="font-medium text-gray-800">{e.option_name}</span>
+                </span>
+                {price > 0 && (
+                  <span className="text-xs font-semibold text-orange ml-2">+₦{price.toLocaleString()}</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    // Raw UUID-keyed dict format
+    if (typeof extras === "object") {
+      const active = Object.entries(extras).filter(([, val]) => {
+        if (Array.isArray(val)) return val.length > 0;
+        if (typeof val === "boolean") return val;
+        if (typeof val === "number") return val > 0;
+        return Boolean(val);
+      });
+      if (active.length === 0) return null;
+      return (
+        <div className="mt-2">
+          <span className="inline-flex items-center gap-1 text-[11px] bg-orange/10 text-orange font-semibold px-2 py-0.5 rounded-full">
+            {active.length} extra{active.length !== 1 ? "s" : ""} added
+          </span>
+        </div>
+      );
+    }
+
+    return null;
   };
 
   if (loading) {
@@ -390,6 +438,10 @@ const OrderDetailPage = () => {
                       <div className="flex-1 min-w-0">
                         <h4 className="font-medium text-gray-900 text-sm md:text-base">{item.product?.title || `Item ${index + 1}`}</h4>
                         <p className="text-sm text-gray-500 mt-1">Quantity: {item.quantity}</p>
+                        {item.size && (
+                          <p className="text-xs text-gray-500 mt-0.5">Size: <span className="font-medium text-gray-700">{item.size}</span></p>
+                        )}
+                        {renderExtras(item.extras)}
                         {item.special_instructions && (
                           <p className="text-sm text-gray-500 italic mt-1 bg-gray-50 p-2 rounded-lg">
                             Note: {item.special_instructions}
