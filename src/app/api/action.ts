@@ -223,11 +223,7 @@ const quantizeCoord = (v?: number | null): number | null => {
 
 export async function getAllOutlets() {
   try {
-    // Use proxy in development to avoid CORS issues
-    const isDevelopment = process.env.NODE_ENV === 'development';
-    const url = isDevelopment
-      ? '/api/proxy/outlets'
-      : `${BASE_URL}/outlets/outlets/public/`;
+    const url = `${BASE_URL}/outlets/outlets/public/`;
 
     // logger.debug('🌐 Fetching outlets from:', url);
 

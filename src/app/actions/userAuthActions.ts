@@ -1,5 +1,3 @@
-"use server";
-
 import { z } from "zod";
 import {
   signinValidationSchema,
@@ -9,12 +7,9 @@ import {
   extractAndThrowLoginError,
   extractAndThrowVerifyOTPError,
 } from "@/src/utils/throwErrorFunctions";
+import { setAuthCookies } from "@/src/lib/tokens";
 
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
-import { cookies } from "next/headers";
-
-const API_BASE_URL = process.env.API_BASE_URL || 'https://norma-api.up.railway.app/api/v1';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://norma-api.up.railway.app/api/v1';
 
 // login
 export async function onSignin(data: z.infer<typeof signinValidationSchema>) {
@@ -51,8 +46,6 @@ export async function onSignin(data: z.infer<typeof signinValidationSchema>) {
 
 // verify user registration otp
 export async function onVerifyUserOTP(data: z.infer<typeof verifyOTPSchema>) {
-  const cookieStore = await cookies();
-
   try {
     const response = await fetch(
       `${API_BASE_URL}/users/verify-otp/`,
@@ -65,7 +58,7 @@ export async function onVerifyUserOTP(data: z.infer<typeof verifyOTPSchema>) {
         body: JSON.stringify({
           email: data.email,
           otp: data.otp,
-          purpose: "magic_auth" // UPDATED: Changed from "login" to "magic_auth" as per CUSTOMER_FLOW.md
+          purpose: "magic_auth"
         }),
       }
     );
@@ -75,23 +68,11 @@ export async function onVerifyUserOTP(data: z.infer<typeof verifyOTPSchema>) {
       extractAndThrowVerifyOTPError(responseData);
     }
 
-    // setting accesstoken in cookies according to the API documentation
-    cookieStore.set("userToken", responseData.data.access_token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 5, // 5 days
-    });
-
-    // Also set refresh token
-    cookieStore.set("refreshToken", responseData.data.refresh_token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 30, // 30 days
-    });
+    // Set tokens client-side via document.cookie / localStorage
+    setAuthCookies(
+      responseData.data?.access_token,
+      responseData.data?.refresh_token,
+    );
 
     return responseData;
   } catch (error: any) {

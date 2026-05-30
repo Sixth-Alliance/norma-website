@@ -1,0 +1,7 @@
+# SPA fallback rules for dynamic Next.js routes
+# Cloudflare Pages serves the static shell while preserving the browser URL.
+# The Next.js client-side router reads the actual ID from the URL via useParams().
+
+/home/tracking/*   /home/tracking/_/index.html   200
+/home/outlets/*    /home/outlets/_/index.html    200
+/home/orders/*     /home/orders/_/index.html     200
