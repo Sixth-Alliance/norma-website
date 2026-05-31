@@ -87,7 +87,7 @@ export const useAuthStore = create<AuthState>()(
       verifyOTP: async (data: any) => {
         try {
           const response = await fetch(
-            `/api/proxy/users/verify-otp`,
+            `${BASE_URL}/users/verify-otp/`,
             {
               method: "POST",
               headers: {
