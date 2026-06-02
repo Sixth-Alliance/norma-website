@@ -49,9 +49,7 @@ const CheckOutMobile: React.FC<checkModalProps> = ({
   isProcessingPayment = false,
 }) => {
   const subtotal = grandTotal;
-  // Calculate tax (7.5% of subtotal)
-  const tax = subtotal * 0.075;
-  const total = subtotal + tax + deliveryFee;
+  const total = subtotal + deliveryFee;
 
   // Debug log to track delivery fee value
   // useEffect(() => {
@@ -106,11 +104,6 @@ const CheckOutMobile: React.FC<checkModalProps> = ({
                 `₦${formatCurrency(deliveryFee)}`
               )}
             </p>
-          </div>
-
-          <div className="flex justify-between items-center mb-3">
-            <p className="text-lg font-medium">VAT (7.5%):</p>
-            <p className="text-lg font-medium">₦{formatCurrency(tax)}</p>
           </div>
 
           <div className="border border-dashed border-[#CFCFCF] my-3"></div>

@@ -30,8 +30,8 @@ interface FoodModalProps {
   onExtrasChange: (extras: Record<string, any>) => void;
 }
 
-const parsePrice = (price: string): number => {
-  const n = parseFloat(price);
+const parsePrice = (price: string | number | null | undefined): number => {
+  const n = parseFloat(String(price ?? 0));
   return isNaN(n) ? 0 : n;
 };
 
@@ -48,6 +48,55 @@ const FoodModal: React.FC<FoodModalProps> = ({
   onExtrasChange,
 }) => {
   const extras = (foodItem?.extras ?? []).filter((e) => e.status === "active");
+
+  const extrasTotalPerUnit = extras.reduce((sum, extra) => {
+    const value = selectedExtras[extra.id];
+    if (value === undefined || value === null) return sum;
+
+    switch (extra.extras_format) {
+      case "radio": {
+        if (typeof value !== "string") return sum;
+        const selectedOption = extra.options.find(
+          (opt) => opt.status === "active" && opt.id === value
+        );
+        return sum + (selectedOption ? parsePrice(selectedOption.price) : 0);
+      }
+      case "check": {
+        if (!Array.isArray(value)) return sum;
+        const checkedTotal = value.reduce((acc, optionValue) => {
+          const optionId =
+            typeof optionValue === "string"
+              ? optionValue
+              : optionValue && typeof optionValue === "object"
+              ? optionValue.id
+              : undefined;
+          if (!optionId) return acc;
+          const selectedOption = extra.options.find(
+            (opt) => opt.status === "active" && opt.id === optionId
+          );
+          return acc + (selectedOption ? parsePrice(selectedOption.price) : 0);
+        }, 0);
+        return sum + checkedTotal;
+      }
+      case "toggle": {
+        if (value !== true) return sum;
+        const activeOption = extra.options.find((opt) => opt.status === "active");
+        return sum + (activeOption ? parsePrice(activeOption.price) : 0);
+      }
+      case "number": {
+        if (typeof value !== "number" || value <= 0) return sum;
+        const activeOption = extra.options.find((opt) => opt.status === "active");
+        const optionPrice = activeOption ? parsePrice(activeOption.price) : 0;
+        return sum + optionPrice * value;
+      }
+      case "text":
+      default:
+        return sum;
+    }
+  }, 0);
+
+  const unitPrice = parsePrice(foodItem?.price) + extrasTotalPerUnit;
+  const totalPrice = unitPrice * Math.max(count, 1);
 
   const handleOptionChange = (extraId: string, value: any) => {
     onExtrasChange({ ...selectedExtras, [extraId]: value });
@@ -325,12 +374,12 @@ const FoodModal: React.FC<FoodModalProps> = ({
 
               <div className="mt-5 flex justify-between items-center">
                 <p className="text-xl font-bold bg-grey text-background py-2 px-5 rounded-3xl">
-                  ₦{formatCurrency(foodItem?.price)}
+                  ₦{formatCurrency(totalPrice)}
                 </p>
                 <div className="flex gap-4 items-center">
                   <div
                     onClick={handleDecrement}
-                    className={`w-[28px] h-[28px] text-2xl font-semibold border-2 border-foreground flex justify-center items-center rounded-full ${
+                    className={`w-7 h-7 text-2xl font-semibold border-2 border-foreground flex justify-center items-center rounded-full ${
                       count === 1
                         ? "opacity-50 cursor-not-allowed"
                         : "cursor-pointer"
