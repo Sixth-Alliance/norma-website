@@ -121,11 +121,24 @@ const CheckOutDesktop: React.FC<checkModalProps> = ({
 								</p>
 							</div>
 
-						<div className="flex justify-between items-center mb-3">
-							<p className="text-lg font-medium">VAT (7.5%):</p>
-							<p className="text-lg font-medium">₦{formatCurrency(vat)}</p>
+							<div className="flex justify-between items-center mb-3">
+								<p className="text-lg font-medium">VAT (7.5%):</p>
+								<p className="text-lg font-medium">₦{formatCurrency(vat)}</p>
+							</div>
+
+							<div className="border border-dashed border-[#CFCFCF] my-3"></div>
+
+							<div className="flex justify-between items-center">
+								<p className="text-xl font-extrabold">Total</p>
+								<p className="text-xl font-extrabold">₦{formatCurrency(total)}</p>
+							</div>
 						</div>
 
+						<div className="mx-5">
+							<CustomButton
+								title={
+									isProcessingPayment
+										? "Processing..."
 										: calculatingFee
 											? "Calculating..."
 											: "Proceed to Payment"
