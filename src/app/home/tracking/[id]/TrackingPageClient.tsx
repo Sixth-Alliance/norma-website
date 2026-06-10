@@ -449,10 +449,10 @@ const Page = () => {
                   <span>₦{formatCurrency(Number(order.delivery_fee))}</span>
                 </div>
 
-                {/* <div className="flex justify-between items-center text-sm">
+                <div className="flex justify-between items-center text-sm">
                   <span className="text-gray-600">VAT (7.5%)</span>
-                  <span>₦{formatCurrency(Number(order.tax) || (Number(order.subtotal || order.total_amount) * 0.075))}</span>
-                </div> */}
+                  <span>₦{formatCurrency(Number((order as any).tax) || (Number(order.subtotal) * 0.075))}</span>
+                </div>
 
                 <div className="flex justify-between items-center font-bold text-base pt-2 border-t mt-2">
                   <span>Total</span>
