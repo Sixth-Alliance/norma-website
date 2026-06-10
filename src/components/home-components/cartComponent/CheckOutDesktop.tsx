@@ -51,7 +51,8 @@ const CheckOutDesktop: React.FC<checkModalProps> = ({
 	isProcessingPayment = false,
 }) => {
 	const subtotal = grandTotal;
-	const total = subtotal + deliveryFee;
+	const vat = subtotal * 0.075;
+	const total = subtotal + deliveryFee + vat;
 
 	return (
 		<Dialog open={isOpen} onOpenChange={onClose}>
@@ -118,6 +119,11 @@ const CheckOutDesktop: React.FC<checkModalProps> = ({
 										`₦${formatCurrency(deliveryFee)}`
 									)}
 								</p>
+							</div>
+
+							<div className="flex justify-between items-center mb-3">
+								<p className="text-lg font-medium">VAT (7.5%):</p>
+								<p className="text-lg font-medium">₦{formatCurrency(vat)}</p>
 							</div>
 
 							<div className="border border-dashed border-[#CFCFCF] my-3"></div>
